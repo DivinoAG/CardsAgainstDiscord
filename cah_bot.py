@@ -5,8 +5,14 @@ import sqlite3
 import asyncio
 from datetime import datetime, timedelta
 import requests
+import os
+from dotenv import load_dotenv
 
-# Replace with your actual GraphQL API URL
+# Load environment variables from .env file
+load_dotenv()
+TOKEN = os.getenv("DISCORD_BOT_TOKEN")
+
+# GraphQL API URL
 API_URL = "https://restagainsthumanity.com/api/graphql"
 
 # Database setup
@@ -126,15 +132,22 @@ async def deal_cards(player_id):
         players[player_id]["hand"].append(cards[0])
 
 # Function to start a new round
-async def start_round():
+async def start_round(ctx):
     global game_active, card_czar, black_card, submitted_cards, players
 
     if not game_active:
         await ctx.respond("Game is not active!", ephemeral=True)
         return
 
-    # Assign card czar
-    card_czar = next(iter(players))
+    # Rotate Card Czar
+    player_ids = list(players.keys())
+    if card_czar is not None:
+        current_czar_index = player_ids.index(card_czar)
+        next_czar_index = (current_czar_index + 1) % len(player_ids)
+        card_czar = player_ids[next_czar_index]
+    else:
+        card_czar = player_ids[0]  # First player is the initial Czar
+
     await ctx.respond(
         f"**Round Start!**\n{bot.get_user(card_czar).mention} is the Card Czar.",
         ephemeral=True,
@@ -166,38 +179,64 @@ async def start_round():
                 ],
             )
 
-# Function to handle card submissions
+
+# Function to handle card submissions and Czar selection
 @bot.event
 async def on_interaction(interaction):
-    global submitted_cards
+    global submitted_cards, black_card, players, card_czar
+
     if interaction.component.style == discord.ButtonStyle.blurple:
-        # Get the selected card index
-        card_index = int(interaction.component.label) - 1
-
-        # Get the player's white card
         player_id = interaction.user.id
-        card = players[player_id]["hand"][card_index]
 
-        # Add the card to submitted cards
-        submitted_cards[player_id] = card["text"]
+        if player_id != card_czar:  # Player card submission
+            card_index = int(interaction.component.label) - 1
+            card = players[player_id]["hand"][card_index]
+            submitted_cards[player_id] = card["text"]
+            players[player_id]["hand"].pop(card_index)
 
-        # Remove the card from the player's hand
-        players[player_id]["hand"].pop(card_index)
+            await interaction.response.defer()
+            await interaction.followup.send(
+                f"Card submitted successfully!", ephemeral=True
+            )
 
-        await interaction.response.defer()
-        await interaction.followup.send(
-            f"Card submitted successfully!", ephemeral=True
-        )
+            if len(submitted_cards) == len(players) - 1:
+                await end_round(interaction)
 
-        # Check if all players have submitted
-        if len(submitted_cards) == len(players) - 1:
-            await end_round()
+
+        elif player_id == card_czar:  # Card Czar selection
+            winning_card_index = int(interaction.component.label.split()[1]) - 1
+            winning_player_id = list(submitted_cards.keys())[winning_card_index]
+            winning_card = submitted_cards[winning_player_id]
+
+            # Update player stats in database
+            cursor.execute(
+                "UPDATE Players SET wins = wins + 1, games_played = games_played + 1 WHERE player_id = ?",
+                (winning_player_id,),
+            )
+            conn.commit()
+
+            # Store winning combination
+            cursor.execute(
+                "INSERT INTO WinningCards (player_id, black_card_text, white_card_text) VALUES (?, ?, ?)",
+                (winning_player_id, black_card["text"], winning_card),
+            )
+            conn.commit()
+
+            players[winning_player_id]["wins"] += 1
+            players[winning_player_id]["games_played"] += 1
+
+            await interaction.response.send_message(
+                f"**Winning Card:** {winning_card} submitted by {bot.get_user(winning_player_id).mention}", ephemeral=False
+            )
+
+            await between_rounds(interaction)
+
 
 # Function to end a round
-async def end_round():
+async def end_round(interaction):
     global card_czar, black_card, submitted_cards, players
+    ctx = interaction.channel # Get ctx from interaction
 
-    # Post all submitted cards to the channel
     cards_message = (
         f"**Black Card:**\n{black_card['text']}\n\n**Submitted Cards:**\n"
     )
@@ -205,7 +244,7 @@ async def end_round():
         cards_message += f"- {card_text}\n"
     await ctx.send(cards_message)
 
-    # Send the Card Czar an ephemeral message to select the winner
+
     card_options = []
     for i, card_text in enumerate(submitted_cards.values()):
         card_options.append(
@@ -214,16 +253,36 @@ async def end_round():
             )
         )
 
-    # Send an ephemeral message to the Card Czar with the submitted cards
     await bot.get_user(card_czar).send(
         f"**Select the winning card:**\n{cards_message}",
         components=card_options,
     )
 
-# Function to handle Card Czar's card selection
-@bot.event
-async def on_interaction(interaction):
-    # ... (Implement logic to handle Card Czar's card selection)
+
+async def between_rounds(ctx):
+    global game_active, players, timer
+    if not game_active:  # Don't start next round if game isn't active
+        return
+
+    await ctx.send(f"Next round in {timer} seconds. Type /join to join.", delete_after=timer)
+    await asyncio.sleep(timer)
+
+    # Check for players who left the server
+    players = {player_id: player_data for player_id, player_data in players.items() if bot.get_user(player_id) is not None}
+
+    # Deal new cards
+    for player_id in players:
+        await deal_cards(player_id)
+
+    # Check if there are enough players for next round
+    if len(players) < 2:  # Need at least 2 players (1 Czar, 1 player)
+        await ctx.send("Not enough players to continue. Game ended.")
+        game_active = False  # End the game
+        return
+
+    await start_round(ctx)
+
+
 
 # Function to handle player disconnects
 @bot.event
@@ -236,37 +295,39 @@ async def on_member_remove(member):
 
 # Function to display player statistics
 @bot.command()
-async def stats(ctx, username=None):
-    if username is None:
-        await ctx.respond("Please specify a username!", ephemeral=True)
-        return
+# ... (unchanged)
 
-    cursor.execute(
-        "SELECT wins, games_played FROM Players WHERE username = ?", (username,)
-    )
-    result = cursor.fetchone()
-    if result is None:
-        await ctx.respond(f"{username} not found in the database.", ephemeral=True)
-        return
-
-    wins, games_played = result
-    win_rate = round((wins / games_played) * 100, 2) if games_played > 0 else 0
-    await ctx.respond(
-        f"**{username} Stats:**\nWins: {wins}\nGames Played: {games_played}\nWin Rate: {win_rate}%",
-        ephemeral=True,
-    )
 
 # Slash command handlers
 @bot.slash_command(name="join", description="Join the Cards Against Humanity game")
 async def join(ctx):
     await add_player(ctx, ctx.author)
 
-# ... (Implement other slash command handlers for admin commands and player stats)
+@bot.slash_command(name="settimer", description="Set the between-rounds timer (in seconds)")
+@commands.has_permissions(administrator=True)  # Restrict to admins
+async def settimer(ctx, seconds: int):
+    global timer
+    if 10 <= seconds <= 60:  # Enforce reasonable limits
+        timer = seconds
+        await ctx.respond(f"Timer set to {seconds} seconds.", ephemeral=True)
+    else:
+        await ctx.respond("Timer must be between 10 and 60 seconds.", ephemeral=True)
+
+
+@bot.slash_command(name="start", description="Start the game (admin only)")
+@commands.has_permissions(administrator=True)
+async def start_game(ctx):
+    global game_active
+    game_active = True
+    await start_round(ctx)
+
+
+# ... (add-cards, remove-cards, filter-packs, reset-game, end - still to be implemented)
 
 # Main bot loop
 @bot.event
 async def on_ready():
     print(f"Logged in as {bot.user}")
 
-# Run the bot with your bot token
-bot.run("YOUR_BOT_TOKEN")
+# Run the bot
+bot.run(TOKEN)
