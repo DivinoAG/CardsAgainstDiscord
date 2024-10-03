@@ -18,7 +18,7 @@ A Discord bot that brings the fun and irreverent card game Cards Against Humanit
 
 1. **Clone the Repository:**
    ```bash
-   git clone https://github.com/yourusername/cards-against-discord.git  # Replace with your repository URL
+   git clone https://github.com/DivinoAG/CardsAgainstDiscord
    ```
 
 2. **Install Dependencies:** Create and activate a virtual environment (recommended):
