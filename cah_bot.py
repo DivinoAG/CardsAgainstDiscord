@@ -12,12 +12,28 @@ from dotenv import load_dotenv
 load_dotenv()
 TOKEN = os.getenv("DISCORD_BOT_TOKEN")
 
-# GraphQL API URL
+# Constants
 API_URL = "https://restagainsthumanity.com/api/graphql"
+DATABASE_NAME = "cards_against_humanity.db"  # Use a constant for the database name
+DEFAULT_HAND_SIZE = 10
 
 # Database setup
-conn = sqlite3.connect("cards_against_humanity.db")
+conn = sqlite3.connect(DATABASE_NAME)  # Use the constant here
 cursor = conn.cursor()
+
+# Create Cards table
+cursor.execute(
+    """
+    CREATE TABLE IF NOT EXISTS Cards (
+        card_id INTEGER PRIMARY KEY AUTOINCREMENT,  -- Auto-incrementing ID
+        pack_name TEXT,
+        card_type TEXT,  -- 'black' or 'white'
+        card_text TEXT,
+        enabled BOOLEAN DEFAULT TRUE
+    )
+    """
+)
+# Create Players table
 cursor.execute(
     """
     CREATE TABLE IF NOT EXISTS Players (
@@ -28,6 +44,7 @@ cursor.execute(
     )
     """
 )
+# Create WinningCards table
 cursor.execute(
     """
     CREATE TABLE IF NOT EXISTS WinningCards (
@@ -54,6 +71,7 @@ black_card = None
 submitted_cards = {}
 players = {}
 timer = 10  # Default timer in seconds
+decks = {}
 
 # GraphQL API client
 def graphql_query(query):
@@ -103,6 +121,13 @@ async def fetch_cards(type, limit=10, pack=None):
     else:
         return cards
 
+    if pack is not None and pack not in decks: # Add this block at the end of the function
+        decks[pack] = {"black": [], "white": []}
+        for pack_data in response["data"]["packs"]:
+            if pack == pack_data["name"]:
+                decks[pack]["black"].extend(pack_data["black"])
+                decks[pack]["white"].extend(pack_data["white"])
+
 # Function to add a player to the game
 async def add_player(ctx, user):
     global players
@@ -125,11 +150,23 @@ async def add_player(ctx, user):
         await ctx.respond(f"{user.mention} is already in the game!", ephemeral=True)
 
 # Function to deal cards to a player
-async def deal_cards(player_id):
+async def deal_cards(player_id, num_cards=DEFAULT_HAND_SIZE):
     global players
-    for _ in range(10 - len(players[player_id]["hand"])):
-        cards = await fetch_cards("white", 1)
-        players[player_id]["hand"].append(cards[0])
+
+    cards_to_deal = num_cards - len(players[player_id]["hand"])
+    if cards_to_deal <= 0:
+        return
+
+    # Prioritize database cards and supplement from API if necessary
+    cursor.execute("SELECT card_text FROM Cards WHERE card_type = 'white' AND enabled = TRUE")
+    db_cards = [card[0] for card in cursor.fetchall()]
+    random_cards = random.sample(db_cards, k=min(cards_to_deal, len(db_cards)))  # Handle edge case of not enough cards in db
+    players[player_id]["hand"].extend(random_cards)
+
+    cards_to_deal -= len(random_cards)  # Update number of cards needed after using db cards
+    if cards_to_deal > 0:
+        api_cards = await fetch_cards("white", cards_to_deal)
+        players[player_id]["hand"].extend([card["text"] for card in api_cards])
 
 # Function to start a new round
 async def start_round(ctx):
@@ -153,8 +190,26 @@ async def start_round(ctx):
         ephemeral=True,
     )
 
-    # Fetch a random black card
-    black_card = await fetch_cards("black")[0]
+    # Fetch a random black card. Prioritize Decks then database then API (NEW)
+    if decks:  # Prioritize cards from selected packs (if any)
+        selected_packs = [pack_name for pack_name, pack_data in decks.items() if pack_data.get("enabled", True)]
+        if selected_packs:
+            chosen_pack = random.choice(selected_packs)
+            black_card = random.choice(decks[chosen_pack]["black"])
+        else:
+            black_card = await fetch_cards("black")
+            black_card = black_card[0] if black_card else None
+    elif cursor.execute("SELECT card_text FROM Cards WHERE card_type = 'black' AND enabled = TRUE").fetchone(): # Check if the cursor returns any values
+        db_cards = cursor.fetchall()
+        black_card = random.choice(db_cards) if db_cards else None
+        black_card = black_card[0] if black_card else None  # Extract text and handle None
+    else:
+        black_card = (await fetch_cards("black"))[0]
+
+    if black_card is None:
+        await ctx.send("No black cards available. Game cannot start.")
+        game_active = False
+        return
 
     # Post the black card
     await ctx.send(
@@ -283,7 +338,6 @@ async def between_rounds(ctx):
     await start_round(ctx)
 
 
-
 # Function to handle player disconnects
 @bot.event
 async def on_member_remove(member):
@@ -295,13 +349,25 @@ async def on_member_remove(member):
 
 # Function to display player statistics
 @bot.command()
-# ... (unchanged)
+async def stats(ctx, username=None):
+    if username is None:
+        await ctx.respond("Please specify a username!", ephemeral=True)
+        return
+
+    cursor.execute(
+        "SELECT wins, games_played FROM Players WHERE username = ?", (username,)
+    )
+    result = cursor.fetchone()
+    if result is None:
+        await ctx.respond(f"{username} not found in the database.", ephemeral=True)
+        return
 
 
 # Slash command handlers
 @bot.slash_command(name="join", description="Join the Cards Against Humanity game")
 async def join(ctx):
     await add_player(ctx, ctx.author)
+
 
 @bot.slash_command(name="settimer", description="Set the between-rounds timer (in seconds)")
 @commands.has_permissions(administrator=True)  # Restrict to admins
@@ -322,12 +388,88 @@ async def start_game(ctx):
     await start_round(ctx)
 
 
-# ... (add-cards, remove-cards, filter-packs, reset-game, end - still to be implemented)
+@bot.slash_command(name="addcards", description="Add cards (admin only)")
+@commands.has_permissions(administrator=True)
+async def add_cards(ctx, pack_name: str, card_type: str, card_text: str):
+    try:
+        cursor.execute(
+            "INSERT INTO Cards (pack_name, card_type, card_text) VALUES (?, ?, ?)",
+            (pack_name, card_type, card_text),
+        )
+        conn.commit()
+        await ctx.respond("Card added successfully!", ephemeral=True)
+    except Exception as e:
+        await ctx.respond(f"Error adding card: {e}", ephemeral=True)
+
+
+@bot.slash_command(name="removecards", description="Remove cards (admin only)")
+@commands.has_permissions(administrator=True)
+async def remove_cards(ctx, card_id: int):
+    try:
+        cursor.execute("DELETE FROM Cards WHERE card_id = ?", (card_id,))
+        conn.commit()
+        await ctx.respond("Card removed successfully!", ephemeral=True)
+    except Exception as e:
+        await ctx.respond(f"Error removing card: {e}", ephemeral=True)
+
+
+@bot.slash_command(name="filterpacks", description="Filter packs (admin only)")
+@commands.has_permissions(administrator=True)
+async def filter_packs(ctx, pack_name: str, enable: bool):
+    global decks
+    try:
+        if pack_name.lower() == 'all': # new: filter ALL packs
+            for pack_name in decks:
+                decks[pack_name]['enabled'] = enable
+            cursor.execute("UPDATE Cards SET enabled = ? ", (enable,))
+            conn.commit()
+            await ctx.respond(f"All packs {'enabled' if enable else 'disabled'} successfully!", ephemeral=True)
+
+        elif pack_name in decks: # Check if the pack exists before trying to filter
+            decks[pack_name]['enabled'] = enable
+            cursor.execute("UPDATE Cards SET enabled = ? WHERE pack_name = ?", (enable, pack_name))
+            conn.commit()
+            await ctx.respond(f"Pack '{pack_name}' {'enabled' if enable else 'disabled'} successfully!", ephemeral=True)
+
+        else: # new
+            await ctx.respond(f"Pack '{pack_name}' not found.", ephemeral=True)
+
+
+    except Exception as e:
+        await ctx.respond(f"Error filtering pack: {e}", ephemeral=True)
+
+
+@bot.slash_command(name="resetgame", description="Reset the game (admin only)")  # New
+@commands.has_permissions(administrator=True)
+async def reset_game(ctx):  # New
+    global game_active, card_czar, black_card, submitted_cards, players, timer
+    try:
+        # Implement logic to reset the game state
+        game_active = False
+        card_czar = None
+        black_card = None
+        submitted_cards = {}
+        players = {}
+        timer = 10
+        await ctx.respond("Game reset successfully!", ephemeral=True)  # New
+
+    except Exception as e: # New
+        await ctx.respond(f"Error resetting game: {e}", ephemeral=True) # New
+
+
+@bot.slash_command(name="end", description="End the game (admin only)") # New
+@commands.has_permissions(administrator=True)
+async def end_game(ctx):  # New
+    global game_active
+    game_active = False
+    await ctx.respond("Game ended.", ephemeral=True) # New
+
 
 # Main bot loop
 @bot.event
 async def on_ready():
     print(f"Logged in as {bot.user}")
+
 
 # Run the bot
 bot.run(TOKEN)
