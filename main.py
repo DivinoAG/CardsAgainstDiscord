@@ -5,6 +5,10 @@ from dotenv import load_dotenv
 from commands import *
 from database import setup_database, conn, fetch_cards_from_db, DATABASE_NAME, DEFAULT_HAND_SIZE
 from game_logic import *
+import logging
+
+# Configure logging (at the top of main.py)
+logging.basicConfig(filename="bot.log", level=logging.ERROR)
 
 # Load environment variables
 load_dotenv()

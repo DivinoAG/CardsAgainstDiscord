@@ -1,9 +1,20 @@
 from database import fetch_cards_from_db, DEFAULT_HAND_SIZE
 from main import API_URL, graphql_query, decks, game_active, card_czar, black_card, submitted_cards, players, timer, bot, conn, cursor
 
+import discord
+import sqlite3
 import random
 import asyncio
 import requests
+import logging
+
+
+# Configure logging
+logger = logging.getLogger(__name__) # Create a logger specific to this module. (New)
+logger.setLevel(logging.ERROR) # Log errors and above. (New)
+handler = logging.FileHandler(filename='game_logic.log', encoding='utf-8', mode='w') # Log to a file named 'game_logic.log'. (New)
+handler.setFormatter(logging.Formatter('%(asctime)s:%(levelname)s:%(name)s: %(message)s')) # Format the log messages. (New)
+logger.addHandler(handler) # Add the handler to the logger. (New)
 
 
 # GraphQL API client
@@ -40,7 +51,15 @@ async def fetch_cards(type, limit=10, pack=None):
     else:
         raise ValueError("Invalid card type")
 
-    response = graphql_query(query)
+    try:
+        response = graphql_query(query)
+    except requests.exceptions.RequestException as e:
+        logger.error(f"API request error: {e}")
+        return []  # Or return None
+
+    if "data" not in response or "packs" not in response["data"]:
+        logger.error("Invalid API response format")
+        return []
 
     if pack is not None and pack not in decks:
         decks[pack] = {"black": [], "white": []}
@@ -78,35 +97,46 @@ async def add_player(ctx, user):
             "wins": 0,
             "games_played": 0,
         }
-        cursor.execute(
-            "INSERT OR IGNORE INTO Players (player_id, username) VALUES (?, ?)",
-            (player_id, user.name),
-        )
-        conn.commit()
+        try:
+            cursor.execute(
+                "INSERT OR IGNORE INTO Players (player_id, username) VALUES (?, ?)",
+                (player_id, user.name),
+            )
+            conn.commit()
+        except sqlite3.Error as e:  # Catch database errors
+            conn.rollback()
+            logger.error(f"Database error in add_player: {e}")
+            await ctx.respond(f"An error occurred adding you to the game: {e}", ephemeral=True)
+            return
+
         await ctx.respond(f"{user.mention} joined the game!", ephemeral=True)
-        await deal_cards(player_id)
+        await deal_cards(ctx, player_id)
     else:
         await ctx.respond(f"{user.mention} is already in the game!", ephemeral=True)
 
 
 # Function to deal cards to a player
-async def deal_cards(player_id, num_cards=DEFAULT_HAND_SIZE):
+async def deal_cards(ctx, player_id, num_cards=DEFAULT_HAND_SIZE): # num_cards argument with default
     global players
 
-    cards_to_deal = num_cards - len(players[player_id]["hand"])
-    if cards_to_deal <= 0:
-        return
+    try:
+        cards_to_deal = num_cards - len(players[player_id]["hand"])
+        if cards_to_deal <= 0:
+            return
 
-    # Prioritize database cards and supplement from API if necessary
-    db_cards_raw = fetch_cards_from_db("white") # Fetch cards from database
-    db_cards = [card[0] for card in db_cards_raw]
-    random_cards = random.sample(db_cards, k=min(cards_to_deal, len(db_cards)))
-    players[player_id]["hand"].extend(random_cards)
+        db_cards_raw = fetch_cards_from_db("white")
+        db_cards = [card[0] for card in db_cards_raw]
+        random_cards = random.sample(db_cards, k=min(cards_to_deal, len(db_cards)))
+        players[player_id]["hand"].extend(random_cards)
 
-    cards_to_deal -= len(random_cards)
-    if cards_to_deal > 0:
-        api_cards = await fetch_cards("white", cards_to_deal)
-        players[player_id]["hand"].extend([card["text"] for card in api_cards])
+        cards_to_deal -= len(random_cards)
+        if cards_to_deal > 0:
+            api_cards = await fetch_cards("white", cards_to_deal)
+            players[player_id]["hand"].extend([card["text"] for card in api_cards])
+
+    except Exception as e:
+        logger.error(f"Error dealing cards: {e}")
+        await ctx.respond("An error occurred dealing cards.", ephemeral=True)
 
 
 # Function to start a new round
@@ -117,14 +147,19 @@ async def start_round(ctx):
         await ctx.respond("Game is not active!", ephemeral=True)
         return
 
-    # Rotate Card Czar
-    player_ids = list(players.keys())
-    if card_czar is not None:
-        current_czar_index = player_ids.index(card_czar)
-        next_czar_index = (current_czar_index + 1) % len(player_ids)
-        card_czar = player_ids[next_czar_index]
-    else:
-        card_czar = player_ids[0]  # First player is the initial Czar
+    try: # Wrap the Card Czar rotation logic in a try/except block (New)
+        player_ids = list(players.keys())
+        if card_czar is not None:
+            current_czar_index = player_ids.index(card_czar)
+            next_czar_index = (current_czar_index + 1) % len(player_ids)
+            card_czar = player_ids[next_czar_index]
+        else:
+            card_czar = player_ids[0]  # First player is the initial Czar
+    except ValueError:  # Handle the potential ValueError if card_czar is not in player_ids (New)
+        logger.error("card_czar is not in player_ids list") # New
+        await ctx.respond("Error rotating Czar. Please start a new game", ephemeral=True)  # (New)
+        return # New
+
 
     await ctx.respond(
         f"**Round Start!**\n{bot.get_user(card_czar).mention} is the Card Czar.",
@@ -149,6 +184,13 @@ async def start_round(ctx):
 
     if black_card is None:
         await ctx.send("No black cards available. Game cannot start.")
+        game_active = False
+        return
+
+    black_card_text = black_card[0] if isinstance(black_card, tuple) else black_card.get('text', None)
+
+    if black_card_text is None:  # Ensure the card text exists
+        await ctx.send("Invalid black card format. Game cannot start.")  # Added new error message
         game_active = False
         return
 
@@ -268,7 +310,7 @@ async def between_rounds(ctx):
 
     # Deal new cards
     for player_id in players:
-        await deal_cards(player_id)
+        await deal_cards(ctx, player_id)
 
     # Check if there are enough players for next round
     if len(players) < 2:  # Need at least 2 players (1 Czar, 1 player)
@@ -286,7 +328,12 @@ async def on_member_remove(member):
     player_id = member.id
     if player_id in players:
         del players[player_id]
-        await ctx.send(f"{member.mention} left the game.")
+        # Get the default channel of the guild the member left.
+        guild = member.guild
+        if guild:
+            default_channel = guild.system_channel
+            if default_channel:
+                await default_channel.send(f"{member.mention} left the game.")
 
 
 # Function to display player statistics
