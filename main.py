@@ -8,7 +8,11 @@ from game_logic import *
 import logging
 
 # Configure logging (at the top of main.py)
-logging.basicConfig(filename="bot.log", level=logging.ERROR)
+logger = logging.getLogger(__name__) # Create a logger specific to this module.
+logger.setLevel(logging.ERROR) # Log errors and above.
+handler = logging.FileHandler(filename='bot.log', encoding='utf-8', mode='w') # Log to a file named 'game_logic.log'.
+handler.setFormatter(logging.Formatter('%(asctime)s:%(levelname)s:%(name)s: %(message)s')) # Format the log messages.
+logger.addHandler(handler) # Add the handler to the logger.
 
 # Load environment variables
 load_dotenv()

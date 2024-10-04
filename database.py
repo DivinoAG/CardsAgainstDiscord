@@ -1,4 +1,12 @@
 import sqlite3
+import logging
+
+# Configure logging (at the top of main.py)
+logger = logging.getLogger(__name__) # Create a logger specific to this module.
+logger.setLevel(logging.ERROR) # Log errors and above.
+handler = logging.FileHandler(filename='database.log', encoding='utf-8', mode='w') # Log to a file named 'game_logic.log'.
+handler.setFormatter(logging.Formatter('%(asctime)s:%(levelname)s:%(name)s: %(message)s')) # Format the log messages.
+logger.addHandler(handler) # Add the handler to the logger.
 
 DATABASE_NAME = "cards_against_humanity.db"
 DEFAULT_HAND_SIZE = 10

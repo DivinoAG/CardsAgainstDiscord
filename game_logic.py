@@ -10,11 +10,11 @@ import logging
 
 
 # Configure logging
-logger = logging.getLogger(__name__) # Create a logger specific to this module. (New)
-logger.setLevel(logging.ERROR) # Log errors and above. (New)
-handler = logging.FileHandler(filename='game_logic.log', encoding='utf-8', mode='w') # Log to a file named 'game_logic.log'. (New)
-handler.setFormatter(logging.Formatter('%(asctime)s:%(levelname)s:%(name)s: %(message)s')) # Format the log messages. (New)
-logger.addHandler(handler) # Add the handler to the logger. (New)
+logger = logging.getLogger(__name__) # Create a logger specific to this module.
+logger.setLevel(logging.ERROR) # Log errors and above.
+handler = logging.FileHandler(filename='game_logic.log', encoding='utf-8', mode='w') # Log to a file named 'game_logic.log'.
+handler.setFormatter(logging.Formatter('%(asctime)s:%(levelname)s:%(name)s: %(message)s')) # Format the log messages.
+logger.addHandler(handler) # Add the handler to the logger.
 
 
 # GraphQL API client
@@ -147,7 +147,7 @@ async def start_round(ctx):
         await ctx.respond("Game is not active!", ephemeral=True)
         return
 
-    try: # Wrap the Card Czar rotation logic in a try/except block (New)
+    try: # Wrap the Card Czar rotation logic in a try/except block
         player_ids = list(players.keys())
         if card_czar is not None:
             current_czar_index = player_ids.index(card_czar)
@@ -155,9 +155,9 @@ async def start_round(ctx):
             card_czar = player_ids[next_czar_index]
         else:
             card_czar = player_ids[0]  # First player is the initial Czar
-    except ValueError:  # Handle the potential ValueError if card_czar is not in player_ids (New)
+    except ValueError:  # Handle the potential ValueError if card_czar is not in player_ids
         logger.error("card_czar is not in player_ids list") # New
-        await ctx.respond("Error rotating Czar. Please start a new game", ephemeral=True)  # (New)
+        await ctx.respond("Error rotating Czar. Please start a new game", ephemeral=True)  #
         return # New
 
 
