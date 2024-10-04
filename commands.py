@@ -72,16 +72,16 @@ async def add_cards(ctx, pack_name: str, card_type: str, card_text: str):
 @commands.has_permissions(administrator=True)
 async def remove_cards(ctx, card_id: int):
     try:
-        cursor.execute("SELECT card_text FROM Cards WHERE card_id = ?", (card_id,)) # Fetch the card text before deleting (New)
-        deleted_card = cursor.fetchone() # Fetch the card that was deleted (New)
+        cursor.execute("SELECT card_text FROM Cards WHERE card_id = ?", (card_id,))
+        deleted_card = cursor.fetchone()
 
         cursor.execute("DELETE FROM Cards WHERE card_id = ?", (card_id,))
-        if cursor.rowcount == 0:  # Check if any rows were affected, i.e. a card was deleted. (New)
-            await ctx.respond("Card not found.", ephemeral=True) # (New)
+        if cursor.rowcount == 0:  # Check if any rows were affected, i.e. a card was deleted.
+            await ctx.respond("Card not found.", ephemeral=True)
             return  # Exit early if no card was found
 
         conn.commit()
-        await ctx.respond(f"Card '{deleted_card[0]}' removed successfully!", ephemeral=True)  # Include the removed card in the message  (NEW) # More informative message
+        await ctx.respond(f"Card '{deleted_card[0]}' removed successfully!", ephemeral=True)
 
     except sqlite3.Error as e:  # Catch SQLite errors
         conn.rollback()
@@ -95,42 +95,42 @@ async def search_cards(ctx, search_term: str):
         search_term = search_term.lower() # Ensure case-insensitive search.
 
         cursor.execute(
-            "SELECT card_id, pack_name, card_type, card_text FROM Cards",  # Fetch all cards from the database.
+            "SELECT card_id, pack_name, card_type, card_text FROM Cards",
         )
         all_cards = cursor.fetchall()
 
-        # Perform fuzzy search and order results by score. (New)
-        matching_cards = [] # list of matched cards (NEW)
-        for card in all_cards: # Iterate over fetched cards
+        # Perform fuzzy search and order results by score.
+        matching_cards = []
+        for card in all_cards:
             score = fuzz.partial_ratio(search_term, card[3].lower()) # Calculate score using Levenshtein distance
-            if score > 50:  # Consider scores above 50 as a match (NEW) (adjust as needed)
-                matching_cards.append((score, card)) # Store the score with the card
+            if score > 50:
+                matching_cards.append((score, card))
 
-        matching_cards.sort(reverse=True, key=lambda x: x[0]) # Sort list by score. (New)
+        matching_cards.sort(reverse=True, key=lambda x: x[0]) # Sort list by score.
 
-        if not matching_cards:  # If no close matches are found
-            await ctx.respond("No cards found matching your search term.", ephemeral=True)  # NEW
+        if not matching_cards:
+            await ctx.respond("No cards found matching your search term.", ephemeral=True)
             return
 
-        # Limit results to 20  (New)
-        matching_cards = matching_cards[:20] # Slice list to up to 20 results
+        # Limit results to 20
+        matching_cards = matching_cards[:20]
 
         # Format and send the results.
         results = "```\n"
-        for score, card in matching_cards: # Iterate the matched cards
+        for score, card in matching_cards:
             results += f"ID: {card[0]}, Pack: {card[1]}, Type: {card[2]}, Text: {card[3]} (Score: {score})\n"
         results += "```"
 
         if len(results) > 2000:  # Check for Discord's message length limit
             await ctx.respond(
                 "Too many results. Please refine your search term.", ephemeral=True
-            )  # Suggest refining the search (NEW)
-            return  # Stop execution to avoid errors (NEW)
+            )
+            return
 
         await ctx.respond(results, ephemeral=True)
 
-    except sqlite3.Error as e:  # Handle database errors
-        conn.rollback() # Rollback database changes if needed
+    except sqlite3.Error as e:
+        conn.rollback()
         await ctx.respond(f"Database error: {e}", ephemeral=True)
 
 
