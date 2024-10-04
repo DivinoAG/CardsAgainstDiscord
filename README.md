@@ -1,18 +1,18 @@
 # Cards Against Discord
 
-A Discord bot that brings the fun and irreverent card game Cards Against Humanity to your server.  Get ready for some hilarious and potentially offensive combinations!
+A Discord bot that brings the fun and irreverent card game Cards Against Humanity to your server. Get ready for some hilarious and potentially offensive combinations!
 
 ## Features
 
 * **Core Gameplay:** Play a full game of Cards Against Humanity directly within Discord.
-* **Card Database:**  Fetches cards from the public Rest Against Humanity API ([https://restagainsthumanity.com/api/graphql](https://restagainsthumanity.com/api/graphql)).
-* **Player Management:**  Players can join, leave, and be automatically assigned as the Card Czar.
-* **Game Flow:**  Automated round management, card dealing, submissions, and winner selection.
-* **Admin Commands:** Control game settings, add custom cards, and manage the game.
+* **Card Database:** Fetches cards from the public Rest Against Humanity API ([https://restagainsthumanity.com/api/graphql](https://restagainsthumanity.com/api/graphql)) and allows for custom cards.
+* **Player Management:** Players can join, leave, and be automatically assigned as the Card Czar.
+* **Game Flow:** Automated round management, card dealing, submissions, and winner selection.
+* **Admin Commands:** Control game settings, add custom cards, manage card packs, and more.  (See "Usage" below for details).
 * **Error Handling:** Robust error handling to gracefully handle disconnects and other issues.
 * **Player Stats:** Track player wins and win rates.
-* **Emoji Voting:** Vote on winning card combinations using emojis.
-* **"Best of" Posts:** Weekly and monthly highlights of the funniest combinations.
+* **Emoji Voting:**  (Implementation in progress)
+* **"Best of" Posts:**  (Implementation in progress)
 
 ## Setup
 
@@ -52,15 +52,23 @@ A Discord bot that brings the fun and irreverent card game Cards Against Humanit
    ```
 
 ## Usage
+**Player Commands:**
 
 * `/join`: Join the game.
-* `/start`: Start a new game (admin only).
-* `/end`: End the current game (admin only).
-* `/stats [username]`: View player statistics.  Omit username to see your own stats.
-* `/set-timer <seconds>`: Set the timer for between-round waiting (admin only).
-* `/add-cards`: Add new cards (admin only).  (Implementation details for this will be added later).
-* `/remove-cards`: Remove cards (admin only). (Implementation details for this will be added later).
-* `/filter-packs`: Filter card packs (admin only).  (Implementation details for this will be added later).
+* `/stats [username]`: View player statistics. Omit username to see your own stats.
+
+**Admin Commands:**
+
+* `/start`: Start a new game.
+* `/end`: End the current game.
+* `/settimer <seconds>`: Set the between-rounds timer (10-60 seconds).
+* `/addcards <pack_name> <card_type (black/white)> <card_text>`: Add a custom card to a pack.
+* `/removecards <card_id>`: Remove a card by ID.
+* `/filterpacks <pack_name> <enable/disable (true/false)>`: Enable or disable a card pack. Use "all" for `pack_name` to filter all packs.
+* `/listpacks`: Lists all card packs fetched from API.
+* `/listcards [pack_name] [card_type] [limit] [offset]`: Lists all custom cards, including ID, pack, type, and text.
+    Filter by pack name and card type, pagination included.
+* `/searchcards <search_term>`: Searches for cards by text (fuzzy search, case-insensitive).
 
 ## Contributing
 
