@@ -2,9 +2,7 @@ import discord
 from discord.ext import commands
 import os
 from dotenv import load_dotenv
-from commands import *
-from database import setup_database, conn, fetch_cards_from_db, DATABASE_NAME, DEFAULT_HAND_SIZE
-from game_logic import *
+from database import setup_database
 import logging
 
 # Configure logging (at the top of main.py)
@@ -20,7 +18,6 @@ TOKEN = os.getenv("DISCORD_BOT_TOKEN")
 
 # Constants
 API_URL = "https://restagainsthumanity.com/api/graphql"
-
 
 # Database setup
 setup_database()

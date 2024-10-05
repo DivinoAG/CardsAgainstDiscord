@@ -43,7 +43,7 @@ Thumbs.db
 *.sqlite3
 
 # Discord bot-specific
-cah_bot.db # Or your specific database filename
+cards_against_humanity.db # Or your specific database filename
 
 
 # Compiled object files and executables

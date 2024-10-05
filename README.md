@@ -48,7 +48,7 @@ A Discord bot that brings the fun and irreverent card game Cards Against Humanit
 
 6. **Run the Bot:**
    ```bash
-   python cah_bot.py
+   python main.py
    ```
 
 ## Usage

@@ -1,8 +1,9 @@
 import sqlite3
 from discord.ext import commands
-from main import bot, game_active, players, timer, decks, API_URL
-from game_logic import add_player, start_round, deal_cards, end_round, between_rounds, fetch_cards
+from main import bot, game_active, players, timer, decks
+from game_logic import add_player, start_round
 from database import conn, cursor
+from utils import graphql_query
 from thefuzz import fuzz
 import requests
 import logging
@@ -144,8 +145,7 @@ async def list_packs(ctx):
               }
             }
         """
-        response = requests.post(API_URL, json={"query": query})
-        response.raise_for_status()
+        response = graphql_query(query)
         api_packs = [pack['name'] for pack in response.json()['data']['packs']]
         await ctx.respond("Available packs from API: " + ", ".join(api_packs))
     except requests.exceptions.RequestException as e:
@@ -167,8 +167,7 @@ async def filter_packs(ctx, pack_name: str, enable: bool):
                   }
                 }
             """
-            response = requests.post(API_URL, json={"query": query})  # Fetch API packs
-            response.raise_for_status()
+            response = graphql_query(query)
             api_packs = [pack['name'] for pack in response.json()['data']['packs']]
 
             for pack in api_packs:

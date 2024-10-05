@@ -1,5 +1,6 @@
-from database import fetch_cards_from_db, DEFAULT_HAND_SIZE
-from main import API_URL, graphql_query, decks, game_active, card_czar, black_card, submitted_cards, players, timer, bot, conn, cursor
+from main import bot, decks, game_active, card_czar, black_card, submitted_cards, timer
+from database import fetch_cards_from_db, DEFAULT_HAND_SIZE, players, conn, cursor
+from utils import graphql_query
 
 import discord
 import sqlite3
@@ -16,12 +17,6 @@ handler = logging.FileHandler(filename='game_logic.log', encoding='utf-8', mode=
 handler.setFormatter(logging.Formatter('%(asctime)s:%(levelname)s:%(name)s: %(message)s')) # Format the log messages.
 logger.addHandler(handler) # Add the handler to the logger.
 
-
-# GraphQL API client
-def graphql_query(query): # Moved from main.py to this file
-    response = requests.post(API_URL, json={"query": query})
-    response.raise_for_status()
-    return response.json()
 
 # Function to fetch cards from the API
 async def fetch_cards(type, limit=10, pack=None):
