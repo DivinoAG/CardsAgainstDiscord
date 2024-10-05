@@ -43,3 +43,15 @@ async def on_ready():
 
 # Run the bot
 bot.run(TOKEN)
+
+@bot.event
+async def on_ready():
+    print(f"Logged in as {bot.user}")
+    print("Attempting to sync commands...")
+    await bot.tree.sync()
+    print("Commands synced.")
+
+@bot.slash_command(name="test", description="Test command")
+async def test(ctx):
+    print("Test command invoked!")
+    await ctx.respond("Test successful!", ephemeral=True)
