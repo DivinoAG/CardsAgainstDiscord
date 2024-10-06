@@ -1,4 +1,4 @@
-from main import bot, decks, game_active, card_czar, black_card, submitted_cards, timer
+from main import bot, decks, game_active, card_czar, black_card, submitted_cards, timer, logger
 from database import fetch_cards_from_db, DEFAULT_HAND_SIZE, players, conn, cursor
 from utils import graphql_query
 
@@ -8,14 +8,6 @@ import random
 import asyncio
 import requests
 import logging
-
-
-# Configure logging
-logger = logging.getLogger(__name__) # Create a logger specific to this module.
-logger.setLevel(logging.ERROR) # Log errors and above.
-handler = logging.FileHandler(filename='game_logic.log', encoding='utf-8', mode='w') # Log to a file named 'game_logic.log'.
-handler.setFormatter(logging.Formatter('%(asctime)s:%(levelname)s:%(name)s: %(message)s')) # Format the log messages.
-logger.addHandler(handler) # Add the handler to the logger.
 
 
 # Function to fetch cards from the API
@@ -101,13 +93,13 @@ async def add_player(ctx, user):
         except sqlite3.Error as e:  # Catch database errors
             conn.rollback()
             logger.error(f"Database error in add_player: {e}")
-            await ctx.respond(f"An error occurred adding you to the game: {e}", ephemeral=True)
+            await interaction.response.send_message(f"An error occurred adding you to the game: {e}", ephemeral=True)
             return
 
-        await ctx.respond(f"{user.mention} joined the game!", ephemeral=True)
+        await interaction.response.send_message(f"{user.mention} joined the game!", ephemeral=True)
         await deal_cards(ctx, player_id)
     else:
-        await ctx.respond(f"{user.mention} is already in the game!", ephemeral=True)
+        await interaction.response.send_message(f"{user.mention} is already in the game!", ephemeral=True)
 
 
 # Function to deal cards to a player
@@ -131,7 +123,7 @@ async def deal_cards(ctx, player_id, num_cards=DEFAULT_HAND_SIZE): # num_cards a
 
     except Exception as e:
         logger.error(f"Error dealing cards: {e}")
-        await ctx.respond("An error occurred dealing cards.", ephemeral=True)
+        await interaction.response.send_message("An error occurred dealing cards.", ephemeral=True)
 
 
 # Function to start a new round
@@ -139,7 +131,7 @@ async def start_round(ctx):
     global game_active, card_czar, black_card, submitted_cards, players, decks
 
     if not game_active:
-        await ctx.respond("Game is not active!", ephemeral=True)
+        await interaction.response.send_message("Game is not active!", ephemeral=True)
         return
 
     try: # Wrap the Card Czar rotation logic in a try/except block
@@ -152,11 +144,11 @@ async def start_round(ctx):
             card_czar = player_ids[0]  # First player is the initial Czar
     except ValueError:  # Handle the potential ValueError if card_czar is not in player_ids
         logger.error("card_czar is not in player_ids list") # New
-        await ctx.respond("Error rotating Czar. Please start a new game", ephemeral=True)  #
+        await interaction.response.send_message("Error rotating Czar. Please start a new game", ephemeral=True)  #
         return # New
 
 
-    await ctx.respond(
+    await interaction.response.send_message(
         f"**Round Start!**\n{bot.get_user(card_czar).mention} is the Card Czar.",
         ephemeral=True,
     )
@@ -335,7 +327,7 @@ async def on_member_remove(member):
 @bot.command()
 async def stats(ctx, username=None):
     if username is None:
-        await ctx.respond("Please specify a username!", ephemeral=True)
+        await interaction.response.send_message("Please specify a username!", ephemeral=True)
         return
 
     cursor.execute(
@@ -343,5 +335,5 @@ async def stats(ctx, username=None):
     )
     result = cursor.fetchone()
     if result is None:
-        await ctx.respond(f"{username} not found in the database.", ephemeral=True)
+        await interaction.response.send_message(f"{username} not found in the database.", ephemeral=True)
         return

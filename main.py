@@ -4,12 +4,21 @@ import os
 from dotenv import load_dotenv
 from database import setup_database
 import logging
+import logging.handlers
 
 # Configure logging (at the top of main.py)
-logger = logging.getLogger(__name__) # Create a logger specific to this module.
-logger.setLevel(logging.ERROR) # Log errors and above.
-handler = logging.FileHandler(filename='bot.log', encoding='utf-8', mode='w') # Log to a file named 'game_logic.log'.
-handler.setFormatter(logging.Formatter('%(asctime)s:%(levelname)s:%(name)s: %(message)s')) # Format the log messages.
+logger = logging.getLogger('discord') # Create a logger specific to this module.
+logger.setLevel(logging.DEBUG) # Log errors and above.
+logging.getLogger('discord.http').setLevel(logging.INFO)
+handler = logging.handlers.RotatingFileHandler(
+    filename='discord.log',
+    encoding='utf-8',
+    maxBytes=32 * 1024 * 1024,  # 32 MiB
+    backupCount=5,  # Rotate through 5 files
+)
+dt_fmt = '%Y-%m-%d %H:%M:%S'
+formatter = logging.Formatter('[{asctime}] [{levelname:<8}] {name}: {message}', dt_fmt, style='{')
+handler.setFormatter(formatter)
 logger.addHandler(handler) # Add the handler to the logger.
 
 # Load environment variables
@@ -51,7 +60,7 @@ async def on_ready():
     await bot.tree.sync()
     print("Commands synced.")
 
-@bot.slash_command(name="test", description="Test command")
-async def test(ctx):
+@bot.tree.command(name="test", description="Test command")
+async def test(interaction: discord.Interaction):
     print("Test command invoked!")
-    await ctx.respond("Test successful!", ephemeral=True)
+    await interaction.response.send_message("Test successful!", ephemeral=True)
