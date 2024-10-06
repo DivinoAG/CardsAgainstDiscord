@@ -7,7 +7,6 @@ import sqlite3
 import random
 import asyncio
 import requests
-import logging
 
 
 # Function to fetch cards from the API
@@ -74,7 +73,7 @@ async def fetch_cards(type, limit=10, pack=None):
 
 
 # Function to add a player to the game
-async def add_player(ctx, user):
+async def add_player(interaction: discord.Interaction, user):
     global players
     player_id = user.id
     if player_id not in players:
@@ -97,13 +96,13 @@ async def add_player(ctx, user):
             return
 
         await interaction.response.send_message(f"{user.mention} joined the game!", ephemeral=True)
-        await deal_cards(ctx, player_id)
+        await deal_cards(interaction, player_id)
     else:
         await interaction.response.send_message(f"{user.mention} is already in the game!", ephemeral=True)
 
 
 # Function to deal cards to a player
-async def deal_cards(ctx, player_id, num_cards=DEFAULT_HAND_SIZE): # num_cards argument with default
+async def deal_cards(interaction: discord.Interaction, player_id, num_cards=DEFAULT_HAND_SIZE): # num_cards argument with default
     global players
 
     try:
@@ -127,7 +126,7 @@ async def deal_cards(ctx, player_id, num_cards=DEFAULT_HAND_SIZE): # num_cards a
 
 
 # Function to start a new round
-async def start_round(ctx):
+async def start_round(interaction: discord.Interaction):
     global game_active, card_czar, black_card, submitted_cards, players, decks
 
     if not game_active:
@@ -170,19 +169,19 @@ async def start_round(ctx):
         black_card = (await fetch_cards("black"))[0]
 
     if black_card is None:
-        await ctx.send("No black cards available. Game cannot start.")
+        await interaction.response.send_message("No black cards available. Game cannot start.")
         game_active = False
         return
 
     black_card_text = black_card[0] if isinstance(black_card, tuple) else black_card.get('text', None)
 
     if black_card_text is None:  # Ensure the card text exists
-        await ctx.send("Invalid black card format. Game cannot start.")  # Added new error message
+        await interaction.response.send_message("Invalid black card format. Game cannot start.")  # Added new error message
         game_active = False
         return
 
     # Post the black card
-    await ctx.send(
+    await interaction.response.send_message(
         f"**Black Card:**\n{black_card['text']}\n\nSubmit your cards using the buttons below."
     )
 
@@ -207,7 +206,7 @@ async def start_round(ctx):
 
 # Function to handle card submissions and Czar selection
 @bot.event
-async def on_interaction(interaction):
+async def on_interaction(interaction: discord.Interaction):
     global submitted_cards, black_card, players, card_czar
 
     if interaction.component.style == discord.ButtonStyle.blurple:
@@ -258,16 +257,16 @@ async def on_interaction(interaction):
 
 
 # Function to end a round
-async def end_round(interaction):
+async def end_round(interaction: discord.Interaction):
     global card_czar, black_card, submitted_cards, players
-    ctx = interaction.channel # Get ctx from interaction
+    interaction = interaction.channel
 
     cards_message = (
         f"**Black Card:**\n{black_card['text']}\n\n**Submitted Cards:**\n"
     )
     for card_text in submitted_cards.values():
         cards_message += f"- {card_text}\n"
-    await ctx.send(cards_message)
+    await interaction.response.send_message(cards_message)
 
 
     card_options = []
@@ -284,12 +283,12 @@ async def end_round(interaction):
     )
 
 
-async def between_rounds(ctx):
+async def between_rounds(interaction: discord.Interaction):
     global game_active, players, timer
     if not game_active:  # Don't start next round if game isn't active
         return
 
-    await ctx.send(f"Next round in {timer} seconds. Type /join to join.", delete_after=timer)
+    await interaction.response.send_message(f"Next round in {timer} seconds. Type /join to join.", delete_after=timer)
     await asyncio.sleep(timer)
 
     # Check for players who left the server
@@ -297,15 +296,15 @@ async def between_rounds(ctx):
 
     # Deal new cards
     for player_id in players:
-        await deal_cards(ctx, player_id)
+        await deal_cards(interaction, player_id)
 
     # Check if there are enough players for next round
     if len(players) < 2:  # Need at least 2 players (1 Czar, 1 player)
-        await ctx.send("Not enough players to continue. Game ended.")
+        await interaction.response.send_message("Not enough players to continue. Game ended.")
         game_active = False  # End the game
         return
 
-    await start_round(ctx)
+    await start_round(interaction)
 
 
 # Function to handle player disconnects
@@ -325,7 +324,7 @@ async def on_member_remove(member):
 
 # Function to display player statistics
 @bot.command()
-async def stats(ctx, username=None):
+async def stats(interaction: discord.Interaction, username=None):
     if username is None:
         await interaction.response.send_message("Please specify a username!", ephemeral=True)
         return
